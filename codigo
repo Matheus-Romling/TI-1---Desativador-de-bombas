@@ -1,0 +1,238 @@
+const int LATCH_PIN = 4;
+const int CLK_PIN   = 7;
+const int DATA_PIN  = 8;
+const int BUZZER    = 3;
+const int LED1      = 13;
+const int LED2      = 12;
+const int LED3      = 11;
+const int LED4      = 10;
+const int BTN1      = A1;
+const int BTN2      = A2;
+const int BTN3      = A3;
+const int POT_PIN   = A0;
+
+const byte numMap[] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92, 0x82, 0xF8, 0x80, 0x90}; // 0-9
+const byte charG = 0x82; 
+const byte charO = 0xC0; 
+const byte charF = 0x8E; 
+const byte blank = 0xFF; 
+const byte digitSelect[] = {0x01, 0x02, 0x04, 0x08}; 
+
+
+enum GameState { CONFIGURA, JOGANDO, GAME_OVER, SUCESSO };
+GameState estadoAtual = CONFIGURA;
+
+int senha[8];
+int acertosAtuais = 0;
+long tempoInicial = 0;
+long tempoRestante = 0;
+unsigned long intervaloTimer = 1000; 
+
+unsigned long ultimoMillis = 0;
+bool goExibido = false;
+bool hinoTocado = false; 
+
+void setup() {
+  pinMode(LATCH_PIN, OUTPUT);
+  pinMode(CLK_PIN, OUTPUT);
+  pinMode(DATA_PIN, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+  
+  pinMode(LED1, OUTPUT); pinMode(LED2, OUTPUT);
+  pinMode(LED3, OUTPUT); pinMode(LED4, OUTPUT);
+  
+  pinMode(BTN1, INPUT_PULLUP);
+  pinMode(BTN2, INPUT_PULLUP);
+  pinMode(BTN3, INPUT_PULLUP);
+
+  digitalWrite(BUZZER, HIGH); 
+  apagaLEDs();
+
+  randomSeed(analogRead(A5));
+  gerarSenha();
+}
+
+void loop() {
+  switch (estadoAtual) {
+    case CONFIGURA:
+      faseConfiguracao();
+      break;
+    case JOGANDO:
+      faseJogando();
+      break;
+    case GAME_OVER:
+      faseGameOver();
+      break;
+    case SUCESSO:
+      faseSucesso();
+      break;
+  }
+}
+
+void faseConfiguracao() {
+  int potValue = analogRead(POT_PIN);
+  tempoInicial = map(potValue, 0, 1023, 10, 90);
+  tempoRestante = tempoInicial;
+  exibeNumero(tempoRestante);
+
+  if (lerBotao() > 0) {
+    estadoAtual = JOGANDO;
+    ultimoMillis = millis();
+    tempoRestante = tempoInicial;
+    goExibido = false;
+    apagaLEDs();
+    delay(300); 
+  }
+}
+
+void faseJogando() {
+  unsigned long currentMillis = millis();
+
+  if (!goExibido) {
+    if (currentMillis - ultimoMillis < 1000) {
+      exibePalavra(charG, charO, blank, blank); 
+      return; 
+    } else {
+      goExibido = true;
+      ultimoMillis = millis(); 
+    }
+  }
+
+  if (currentMillis - ultimoMillis >= intervaloTimer) {
+    ultimoMillis = currentMillis;
+    tempoRestante--;
+
+    if (tempoRestante > 0 && tempoRestante <= (tempoInicial * 0.10)) {
+      bipCurto();
+    }
+  }
+
+  if (tempoRestante <= 0) {
+    estadoAtual = GAME_OVER;
+    return;
+  }
+
+  int btnPressionado = lerBotao();
+  if (btnPressionado > 0) {
+    if (btnPressionado == senha[acertosAtuais]) {
+      acertosAtuais++;
+      atualizaLEDsBinario(acertosAtuais);
+      
+      if (acertosAtuais == 8) {
+        estadoAtual = SUCESSO;
+        ultimoMillis = millis();
+        return;
+      }
+    } else {
+      acertosAtuais = 0;
+      atualizaLEDsBinario(0);
+      intervaloTimer = (unsigned long)(intervaloTimer * 0.95); // Penalidade de tempo
+    }
+    delay(250); 
+  }
+
+  exibeNumero(tempoRestante);
+}
+
+void faseGameOver() {
+  digitalWrite(BUZZER, LOW); 
+  exibeNumero(0);            
+}
+
+void faseSucesso() { //surpresa pra vcs aqui
+  if (!hinoTocado) {
+    bipComDisplay(180, 50);  
+    bipComDisplay(180, 50);  
+    bipComDisplay(180, 50); 
+    bipComDisplay(180, 50);  
+    bipComDisplay(360, 50);  
+    bipComDisplay(360, 50);  
+    bipComDisplay(540, 50);  
+    bipComDisplay(700, 250);
+    
+    bipComDisplay(180, 50);  
+    bipComDisplay(180, 50);  
+    bipComDisplay(360, 50);  
+    bipComDisplay(180, 50);  
+    bipComDisplay(180, 50);  
+    bipComDisplay(360, 50);  
+    bipComDisplay(800, 50);  
+    
+    hinoTocado = true;
+  }
+  
+  exibePalavra(blank, charO, charF, charF); 
+}
+
+void bipComDisplay(int duracaoBip, int duracaoSilencio) {
+  unsigned long inicio = millis();
+  
+  digitalWrite(BUZZER, LOW);
+  while (millis() - inicio < duracaoBip) {
+    exibePalavra(blank, charO, charF, charF);
+  }
+
+  digitalWrite(BUZZER, HIGH);
+  inicio = millis();
+  while (millis() - inicio < duracaoSilencio) {
+    exibePalavra(blank, charO, charF, charF);
+  }
+}
+
+void gerarSenha() {
+  for (int i = 0; i < 8; i++) {
+    senha[i] = random(1, 4);
+  }
+}
+
+int lerBotao() {
+  if (digitalRead(BTN1) == LOW) return 1;
+  if (digitalRead(BTN2) == LOW) return 2;
+  if (digitalRead(BTN3) == LOW) return 3;
+  return 0;
+}
+
+void atualizaLEDsBinario(int valor) {
+  digitalWrite(LED1, (valor & 0x01) ? LOW : HIGH); 
+  digitalWrite(LED2, (valor & 0x02) ? LOW : HIGH); 
+  digitalWrite(LED3, (valor & 0x04) ? LOW : HIGH); 
+  digitalWrite(LED4, (valor & 0x08) ? LOW : HIGH); 
+}
+
+void apagaLEDs() {
+  digitalWrite(LED1, HIGH);   digitalWrite(LED2, HIGH);
+  digitalWrite(LED3, HIGH);   digitalWrite(LED4, HIGH);
+}
+
+void bipCurto() {
+  digitalWrite(BUZZER, LOW);
+  delay(50); 
+  digitalWrite(BUZZER, HIGH);
+}
+
+void exibeNumero(int numero) {
+  int milhares = (numero / 1000) % 10;
+  int centenas = (numero / 100) % 10;
+  int dezenas  = (numero / 10) % 10;
+  int unidades = numero % 10;
+
+  enviaShiftRegister(numero > 999 ? numMap[milhares] : blank, 0);
+  enviaShiftRegister(numero > 99 ? numMap[centenas] : blank, 1);
+  enviaShiftRegister(numero > 9 ? numMap[dezenas] : blank, 2);
+  enviaShiftRegister(numMap[unidades], 3);
+}
+
+void exibePalavra(byte dig1, byte dig2, byte dig3, byte dig4) {
+  enviaShiftRegister(dig1, 0);
+  enviaShiftRegister(dig2, 1);
+  enviaShiftRegister(dig3, 2);
+  enviaShiftRegister(dig4, 3);
+}
+
+void enviaShiftRegister(byte valorSegmento, byte posicaoDigito) {
+  digitalWrite(LATCH_PIN, LOW);
+  shiftOut(DATA_PIN, CLK_PIN, MSBFIRST, valorSegmento);
+  shiftOut(DATA_PIN, CLK_PIN, MSBFIRST, digitSelect[posicaoDigito]);
+  digitalWrite(LATCH_PIN, HIGH);
+  delayMicroseconds(2000); 
+}
